@@ -74,6 +74,11 @@ def ast_to_string(ast):
         ">=",
         "==",
         "!=",
+        "&",
+        "|",
+        "^",
+        "<<",
+        ">>",
     ]:
         return (
             "("
@@ -145,7 +150,7 @@ def ast_to_string(ast):
         return ast_to_string(ast["function"]) + "(" + ",".join(items) + ")"
 
     if ast["tag"] == "complex":
-        s = f"{ast_to_string(ast["base"])}[{ast_to_string(ast["index"])}]"
+        s = f"{ast_to_string(ast['base'])}[{ast_to_string(ast['index'])}]"
         return s
 
     if ast["tag"] == "assign":
@@ -214,16 +219,16 @@ def evaluate(ast, environment):
         assert type(ast["value"]) in [
             float,
             int,
-        ], f"unexpected type {type(ast["value"])}"
+        ], f"unexpected type {type(ast['value'])}"
         return ast["value"], None
     if ast["tag"] == "boolean":
         assert ast["value"] in [
             True,
             False,
-        ], f"unexpected type {type(ast["value"])}"
+        ], f"unexpected type {type(ast['value'])}"
         return ast["value"], None
     if ast["tag"] == "string":
-        assert type(ast["value"]) == str, f"unexpected type {type(ast["value"])}"
+        assert type(ast["value"]) == str, f"unexpected type {type(ast['value'])}"
         return ast["value"], None
     if ast["tag"] == "null":
         return None, None
@@ -287,7 +292,7 @@ def evaluate(ast, environment):
         types = type_of(left_value, right_value)
         if types == "number-number":
             return left_value - right_value, None
-        raise Exception(f"Illegal types for {ast["tag"]}:{types}")
+        raise Exception(f"Illegal types for {ast['tag']}:{types}")
 
     if ast["tag"] == "*":
         left_value, l_status = evaluate(ast["left"], environment)
@@ -339,6 +344,68 @@ def evaluate(ast, environment):
             )
             return left_value % right_value, None
         raise Exception(f"Illegal types for {ast['tag']}:{types}")
+
+    if ast["tag"] == "&":
+        left_value, l_status = evaluate(ast["left"], environment)
+        if l_status == "exit":
+            return left_value, "exit"
+        right_value, r_status = evaluate(ast["right"], environment)
+        if r_status == "exit":
+            return right_value, "exit"
+        types = type_of(left_value, right_value)
+        if types == "number-number":
+            return int(left_value) & int(right_value), None
+        raise Exception(f"Illegal types for {ast['tag']}: {types}")
+
+    if ast["tag"] == "|":
+        left_value, l_status = evaluate(ast["left"], environment)
+        if l_status == "exit":
+            return left_value, "exit"
+        right_value, r_status = evaluate(ast["right"], environment)
+        if r_status == "exit":
+            return right_value, "exit"
+        types = type_of(left_value, right_value)
+        if types == "number-number":
+            return int(left_value) | int(right_value), None
+        raise Exception(f"Illegal types for {ast['tag']}: {types}")
+
+    if ast["tag"] == "^":
+        left_value, l_status = evaluate(ast["left"], environment)
+        if l_status == "exit":
+            return left_value, "exit"
+        right_value, r_status = evaluate(ast["right"], environment)
+        if r_status == "exit":
+            return right_value, "exit"
+        types = type_of(left_value, right_value)
+        if types == "number-number":
+            return int(left_value) ^ int(right_value), None
+        raise Exception(f"Illegal types for {ast['tag']}: {types}")
+
+    if ast["tag"] == "<<":
+        left_value, l_status = evaluate(ast["left"], environment)
+        if l_status == "exit":
+            return left_value, "exit"
+        right_value, r_status = evaluate(ast["right"], environment)
+        if r_status == "exit":
+            return right_value, "exit"
+        types = type_of(left_value, right_value)
+        if types == "number-number":
+            assert int(right_value) >= 0, "Shift amount must be non-negative"
+            return int(left_value) << int(right_value), None
+        raise Exception(f"Illegal types for {ast['tag']}: {types}")
+
+    if ast["tag"] == ">>":
+        left_value, l_status = evaluate(ast["left"], environment)
+        if l_status == "exit":
+            return left_value, "exit"
+        right_value, r_status = evaluate(ast["right"], environment)
+        if r_status == "exit":
+            return right_value, "exit"
+        types = type_of(left_value, right_value)
+        if types == "number-number":
+            assert int(right_value) >= 0, "Shift amount must be non-negative"
+            return int(left_value) >> int(right_value), None
+        raise Exception(f"Illegal types for {ast['tag']}: {types}")
 
     if ast["tag"] == "negate":
         value, status = evaluate(ast["value"], environment)
@@ -1228,6 +1295,60 @@ def test_control_flow_scoping_rules():
     except Exception as e:
         assert "'break' statement outside of loop" in str(e)
 
+def test_evaluate_bitwise_operators():
+    print("test evaluate bitwise operators")
+
+    # AND
+    equals("6 & 3", {}, 2)   #110 & 011 = 010
+    equals("5 & 1", {}, 1)   #101 & 001 = 001
+    equals("0 & 7", {}, 0)
+
+    # OR
+    equals("6 | 3", {}, 7)   #110 | 011 = 111
+    equals("5 | 2", {}, 7)   #101 | 010 = 111
+    equals("0 | 0", {}, 0)
+
+    # XOR
+    equals("6 ^ 3", {}, 5)   #110 ^ 011 = 101
+    equals("5 ^ 5", {}, 0)   #anything XOR itself = 0
+    equals("0 ^ 7", {}, 7)
+
+    # left shift
+    equals("1 << 3", {}, 8)  #1 * 2^3
+    equals("3 << 2", {}, 12) #3 * 2^2
+
+    # right shift
+    equals("8 >> 3", {}, 1)  #8 / 2^3
+    equals("12 >> 2", {}, 3) #12 / 2^2
+
+    # precedence: bitwise binds tighter than relational
+    equals("6 & 3 == 2", {}, True)   #(6&3) == 2
+    equals("6 | 1 > 5", {}, True)    #(6|1) > 5
+
+    # precedence: arithmetic binds tighter than bitwise
+    equals("1 + 1 & 3", {}, 2)       #(1+1) & 3
+    equals("2 * 3 | 1", {}, 7)       #(2*3) | 1
+
+    # chaining left-to-right
+    equals("7 & 6 & 3", {}, 2)       #(7&6)&3 = 6&3 = 2
+
+    # variables
+    equals("a & b", {"a": 0b1010, "b": 0b1100}, 0b1000)
+    equals("a | b", {"a": 0b1010, "b": 0b1100}, 0b1110)
+    equals("a ^ b", {"a": 0b1010, "b": 0b1100}, 0b0110)
+
+    # type errors
+    try:
+        equals('"a" & 1', {}, None)
+        assert False, "Expected exception for string & number"
+    except Exception as e:
+        assert "Illegal types" in str(e)
+
+    try:
+        equals("1 << -1", {}, None)
+        assert False, "Expected exception for negative shift"
+    except Exception as e:
+        assert "non-negative" in str(e)
 
 if __name__ == "__main__":
     # statements and programs are tested implicitly
@@ -1253,4 +1374,5 @@ if __name__ == "__main__":
     test_scoping()
     test_closures()
     test_control_flow_scoping_rules()
+    test_evaluate_bitwise_operators()
     print("done.")
