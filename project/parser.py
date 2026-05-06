@@ -157,6 +157,7 @@ def test_parse_simple_expression():
     }
 
 
+
 def parse_list(tokens):
     """
     list = "[" expression { "," expression } "]"
@@ -723,17 +724,143 @@ def test_parse_arithmetic_expression():
     }
 
 
-# RELATIONAL EXPRESSIONS
+#bitise expressions
+def parse_bitwise_expression(tokens):
+    """
+    bitwise_expression = arithmetic_expression { ("&" | "|" | "^" | "<<" | ">>") arithmetic_expression }
+    """
+    node, tokens = parse_arithmetic_expression(tokens)
+    while tokens[0]["tag"] in ["&", "|", "^", "<<", ">>"]:
+        tag = tokens[0]["tag"]
+        next_node, tokens = parse_arithmetic_expression(tokens[1:])
+        node = {"tag": tag, "left": node, "right": next_node}
+    return node, tokens
 
+def test_parse_bitwise_expression():
+    """
+    bitwise_expression = arithmetic_expression { ("&" | "|" | "^") arithmetic_expression }
+    """
+    print("testing parse_bitwise_expression...")
+
+    # passthrough — no bitwise operator
+    ast, tokens = parse_bitwise_expression(tokenize("x"))
+    assert ast == {"tag": "identifier", "value": "x"}
+
+    # single &
+    ast, tokens = parse_bitwise_expression(tokenize("x&y"))
+    assert ast == {
+        "tag": "&",
+        "left": {"tag": "identifier", "value": "x"},
+        "right": {"tag": "identifier", "value": "y"},
+    }
+
+    # single |
+    ast, tokens = parse_bitwise_expression(tokenize("x|y"))
+    assert ast == {
+        "tag": "|",
+        "left": {"tag": "identifier", "value": "x"},
+        "right": {"tag": "identifier", "value": "y"},
+    }
+
+    # single ^
+    ast, tokens = parse_bitwise_expression(tokenize("x^y"))
+    assert ast == {
+        "tag": "^",
+        "left": {"tag": "identifier", "value": "x"},
+        "right": {"tag": "identifier", "value": "y"},
+    }
+
+    ast, tokens = parse_bitwise_expression(tokenize("x&y&z"))
+    assert ast == {
+        "tag": "&",
+        "left": {
+            "tag": "&",
+            "left": {"tag": "identifier", "value": "x"},
+            "right": {"tag": "identifier", "value": "y"},
+        },
+        "right": {"tag": "identifier", "value": "z"},
+    }
+
+    ast, tokens = parse_bitwise_expression(tokenize("x|y^z"))
+    assert ast == {
+        "tag": "^",
+        "left": {
+            "tag": "|",
+            "left": {"tag": "identifier", "value": "x"},
+            "right": {"tag": "identifier", "value": "y"},
+        },
+        "right": {"tag": "identifier", "value": "z"},
+    }
+
+    ast, tokens = parse_bitwise_expression(tokenize("x+y&z+w"))
+    assert ast == {
+        "tag": "&",
+        "left": {
+            "tag": "+",
+            "left": {"tag": "identifier", "value": "x"},
+            "right": {"tag": "identifier", "value": "y"},
+        },
+        "right": {
+            "tag": "+",
+            "left": {"tag": "identifier", "value": "z"},
+            "right": {"tag": "identifier", "value": "w"},
+        },
+    }
+
+    ast, tokens = parse_relational_expression(tokenize("x&y<z"))
+    assert ast == {
+        "tag": "<",
+        "left": {
+            "tag": "&",
+            "left": {"tag": "identifier", "value": "x"},
+            "right": {"tag": "identifier", "value": "y"},
+        },
+        "right": {"tag": "identifier", "value": "z"},
+    }
+
+    ast = parse(tokenize("a = x & y | z"))
+    assert ast == {
+        "tag": "program",
+        "statements": [
+            {
+                "tag": "assign",
+                "target": {"tag": "identifier", "value": "a"},
+                "value": {
+                    "tag": "|",
+                    "left": {
+                        "tag": "&",
+                        "left": {"tag": "identifier", "value": "x"},
+                        "right": {"tag": "identifier", "value": "y"},
+                    },
+                    "right": {"tag": "identifier", "value": "z"},
+                },
+            }
+        ],
+    }
+
+    ast, tokens = parse_bitwise_expression(tokenize("x&(y|z)"))
+    assert ast == {
+        "tag": "&",
+        "left": {"tag": "identifier", "value": "x"},
+        "right": {
+            "tag": "|",
+            "left": {"tag": "identifier", "value": "y"},
+            "right": {"tag": "identifier", "value": "z"},
+        },
+    }
+
+    print("test parse is done :)")
+
+# RELATIONAL EXPRESSIONS
 
 def parse_relational_expression(tokens):
     """
     relational_expression = arithmetic_expression { ("<" | ">" | "<=" | ">=" | "==" | "!=") arithmetic_expression }
     """
-    node, tokens = parse_arithmetic_expression(tokens)
+    node, tokens = parse_bitwise_expression(tokens)  # changed
     while tokens[0]["tag"] in ["<", ">", "<=", ">=", "==", "!="]:
         tag = tokens[0]["tag"]
-        next_node, tokens = parse_arithmetic_expression(tokens[1:])
+        next_node, tokens = parse_bitwise_expression(tokens[1:])  # changed
         node = {"tag": tag, "left": node, "right": next_node}
     return node, tokens
 
@@ -1638,3 +1765,4 @@ if __name__ == "__main__":
         print(f"Untested grammar = [[[ {test_grammar} ]]]")
 
     test_parse()
+    test_parse_bitwise_expression()
